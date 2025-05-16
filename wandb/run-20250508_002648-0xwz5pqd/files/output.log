@@ -1,0 +1,10 @@
+ 31%|█████████████████████████████████████████████▏                                                                                                   | 467/1500 [1:14:26<2:42:15,  9.42s/it]
+{'loss': 60.4532, 'grad_norm': 0.45311611890792847, 'learning_rate': 0.0002, 'epoch': 0.0}
+{'loss': 29.188, 'grad_norm': 0.2982722520828247, 'learning_rate': 0.0002, 'epoch': 0.0}
+{'loss': 25.6734, 'grad_norm': 0.3917601704597473, 'learning_rate': 0.0002, 'epoch': 0.01}
+{'loss': 56.5241, 'grad_norm': 0.12463437020778656, 'learning_rate': 0.0002, 'epoch': 0.01}
+{'loss': 19.9652, 'grad_norm': 0.4126909077167511, 'learning_rate': 0.0002, 'epoch': 0.01}
+{'loss': 25.3725, 'grad_norm': 0.4523981213569641, 'learning_rate': 0.0002, 'epoch': 0.01}
+{'loss': 45.1989, 'grad_norm': 0.3517608940601349, 'learning_rate': 0.0002, 'epoch': 0.02}
+{'loss': 49.2362, 'grad_norm': 0.3797595798969269, 'learning_rate': 0.0002, 'epoch': 0.02}
+{'loss': 53.2944, 'grad_norm': 0.33003994822502136, 'learning_rate': 0.0002, 'epoch': 0.02}

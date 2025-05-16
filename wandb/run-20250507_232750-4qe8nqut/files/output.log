@@ -1,0 +1,48 @@
+  0%|                                                                                                                                                               | 0/1500 [00:00<?, ?it/s]Traceback (most recent call last):
+  File "/home/vimagupta123/DeepSeek-Coder/finetune/finetune_lora_deepseekcoder.py", line 246, in <module>
+    train()
+  File "/home/vimagupta123/DeepSeek-Coder/finetune/finetune_lora_deepseekcoder.py", line 240, in train
+    trainer.train()
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/transformers/trainer.py", line 2245, in train
+    return inner_training_loop(
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/transformers/trainer.py", line 2514, in _inner_training_loop
+    batch_samples, num_items_in_batch = self.get_batch_samples(epoch_iterator, num_batches, args.device)
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/transformers/trainer.py", line 5243, in get_batch_samples
+    batch_samples.append(next(epoch_iterator))
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/accelerate/data_loader.py", line 566, in __iter__
+    current_batch = next(dataloader_iter)
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 701, in __next__
+    data = self._next_data()
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 757, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 55, in fetch
+    return self.collate_fn(data)
+  File "/home/vimagupta123/DeepSeek-Coder/finetune/finetune_lora_deepseekcoder.py", line 148, in __call__
+    input_ids = torch.nn.utils.rnn.pad_sequence(
+  File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/nn/utils/rnn.py", line 478, in pad_sequence
+    return torch._C._nn.pad_sequence(
+TypeError: expected Tensor as element 0 in argument 0, but got list
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/vimagupta123/DeepSeek-Coder/finetune/finetune_lora_deepseekcoder.py", line 246, in <module>
+[rank0]:     train()
+[rank0]:   File "/home/vimagupta123/DeepSeek-Coder/finetune/finetune_lora_deepseekcoder.py", line 240, in train
+[rank0]:     trainer.train()
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/transformers/trainer.py", line 2245, in train
+[rank0]:     return inner_training_loop(
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/transformers/trainer.py", line 2514, in _inner_training_loop
+[rank0]:     batch_samples, num_items_in_batch = self.get_batch_samples(epoch_iterator, num_batches, args.device)
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/transformers/trainer.py", line 5243, in get_batch_samples
+[rank0]:     batch_samples.append(next(epoch_iterator))
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/accelerate/data_loader.py", line 566, in __iter__
+[rank0]:     current_batch = next(dataloader_iter)
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 701, in __next__
+[rank0]:     data = self._next_data()
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 757, in _next_data
+[rank0]:     data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 55, in fetch
+[rank0]:     return self.collate_fn(data)
+[rank0]:   File "/home/vimagupta123/DeepSeek-Coder/finetune/finetune_lora_deepseekcoder.py", line 148, in __call__
+[rank0]:     input_ids = torch.nn.utils.rnn.pad_sequence(
+[rank0]:   File "/opt/conda/envs/deepseek-coder/lib/python3.10/site-packages/torch/nn/utils/rnn.py", line 478, in pad_sequence
+[rank0]:     return torch._C._nn.pad_sequence(
+[rank0]: TypeError: expected Tensor as element 0 in argument 0, but got list

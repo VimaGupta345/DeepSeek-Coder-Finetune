@@ -1,0 +1,7 @@
+{"time":"2025-05-07T21:38:37.58755966Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/vimagupta123/DeepSeek-Coder/finetune/wandb/run-20250507_213837-yfenkaip/logs/debug-core.log"}
+{"time":"2025-05-07T21:38:37.724021442Z","level":"INFO","msg":"created new stream","id":"yfenkaip"}
+{"time":"2025-05-07T21:38:37.724058757Z","level":"INFO","msg":"stream: started","id":"yfenkaip"}
+{"time":"2025-05-07T21:38:37.724091268Z","level":"INFO","msg":"writer: Do: started","stream_id":"yfenkaip"}
+{"time":"2025-05-07T21:38:37.724117695Z","level":"INFO","msg":"handler: started","stream_id":"yfenkaip"}
+{"time":"2025-05-07T21:38:37.724126794Z","level":"INFO","msg":"sender: started","stream_id":"yfenkaip"}
+{"time":"2025-05-07T21:38:37.847230152Z","level":"INFO","msg":"Starting system monitor"}

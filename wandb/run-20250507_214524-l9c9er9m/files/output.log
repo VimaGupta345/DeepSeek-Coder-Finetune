@@ -1,0 +1,6 @@
+  9%|████████████▋                                                                                                                                      | 130/1500 [20:43<3:38:22,  9.56s/it]
+{'loss': 3.3928, 'grad_norm': 2.3455541133880615, 'learning_rate': 0.0002, 'epoch': 0.0}
+{'loss': 3.2534, 'grad_norm': 0.6067447662353516, 'learning_rate': 0.0002, 'epoch': 0.0}
+{'loss': 3.1291, 'grad_norm': 0.822597324848175, 'learning_rate': 0.0002, 'epoch': 0.0}
+{'loss': 3.0344, 'grad_norm': 0.8835291862487793, 'learning_rate': 0.0002, 'epoch': 0.0}
+{'loss': 3.3473, 'grad_norm': 0.5882063508033752, 'learning_rate': 0.0002, 'epoch': 0.01}

@@ -1,0 +1,87 @@
+{
+  "os": "Linux-5.10.0-34-cloud-amd64-x86_64-with-glibc2.31",
+  "python": "CPython 3.10.17",
+  "startedAt": "2025-05-08T00:26:48.461464Z",
+  "args": [
+    "--local_rank=0",
+    "--model_name_or_path",
+    "deepseek-ai/deepseek-coder-6.7b-instruct",
+    "--data_path",
+    "data/rust_instruct_format.jsonl",
+    "--output_dir",
+    "./checkpoints/deepseek-lora",
+    "--per_device_train_batch_size",
+    "1",
+    "--gradient_accumulation_steps",
+    "4",
+    "--learning_rate",
+    "2e-4",
+    "--bf16",
+    "True",
+    "--gradient_checkpointing",
+    "False",
+    "--deepspeed",
+    "configs/ds_config_zero3.json",
+    "--report_to",
+    "wandb",
+    "--run_name",
+    "deepseek-lora-r16-longrun",
+    "--logging_dir",
+    "./wandb_logs",
+    "--logging_steps",
+    "50",
+    "--evaluation_strategy",
+    "steps",
+    "--eval_steps",
+    "200",
+    "--save_strategy",
+    "steps",
+    "--save_steps",
+    "200",
+    "--save_total_limit",
+    "3",
+    "--max_steps",
+    "1500",
+    "--num_train_epochs",
+    "3",
+    "--model_max_length",
+    "1024"
+  ],
+  "program": "/home/vimagupta123/DeepSeek-Coder/finetune/finetune_lora_deepseekcoder.py",
+  "codePath": "finetune/finetune_lora_deepseekcoder.py",
+  "git": {
+    "remote": "https://github.com/deepseek-ai/DeepSeek-Coder.git",
+    "commit": "b7ba565956fe61153064f288862daf1896de5393"
+  },
+  "email": "vima.gupta@gatech.edu",
+  "root": "/home/vimagupta123/DeepSeek-Coder/finetune",
+  "host": "instance-20250507-190542",
+  "executable": "/opt/conda/envs/deepseek-coder/bin/python3.10",
+  "codePathLocal": "finetune_lora_deepseekcoder.py",
+  "cpu_count": 6,
+  "cpu_count_logical": 12,
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "528173547520",
+      "used": "80404852736"
+    }
+  },
+  "memory": {
+    "total": "179380035584"
+  },
+  "cpu": {
+    "count": 6,
+    "countLogical": 12
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA A100-SXM4-80GB",
+      "memoryTotal": "85899345920",
+      "cudaCores": 6912,
+      "architecture": "Ampere"
+    }
+  ],
+  "cudaVersion": "12.4"
+}

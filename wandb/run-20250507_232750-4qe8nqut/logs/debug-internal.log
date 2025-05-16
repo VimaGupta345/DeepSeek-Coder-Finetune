@@ -1,0 +1,15 @@
+{"time":"2025-05-07T23:27:50.280455431Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/vimagupta123/DeepSeek-Coder/finetune/wandb/run-20250507_232750-4qe8nqut/logs/debug-core.log"}
+{"time":"2025-05-07T23:27:50.412890492Z","level":"INFO","msg":"created new stream","id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:50.412918263Z","level":"INFO","msg":"stream: started","id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:50.412952658Z","level":"INFO","msg":"sender: started","stream_id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:50.412948653Z","level":"INFO","msg":"writer: Do: started","stream_id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:50.412992946Z","level":"INFO","msg":"handler: started","stream_id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:50.513818071Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-05-07T23:27:50.71744566Z","level":"INFO","msg":"stream: closing","id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:50.717482057Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-05-07T23:27:50.717532224Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-05-07T23:27:51.11268188Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-05-07T23:27:51.186807861Z","level":"INFO","msg":"handler: closed","stream_id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:51.186839113Z","level":"INFO","msg":"sender: closed","stream_id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:51.186828404Z","level":"INFO","msg":"writer: Close: closed","stream_id":"4qe8nqut"}
+{"time":"2025-05-07T23:27:51.186910767Z","level":"INFO","msg":"stream: closed","id":"4qe8nqut"}

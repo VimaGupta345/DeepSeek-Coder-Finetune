@@ -1,0 +1,7 @@
+{"time":"2025-05-08T00:26:48.463095774Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/vimagupta123/DeepSeek-Coder/finetune/wandb/run-20250508_002648-0xwz5pqd/logs/debug-core.log"}
+{"time":"2025-05-08T00:26:48.593471352Z","level":"INFO","msg":"created new stream","id":"0xwz5pqd"}
+{"time":"2025-05-08T00:26:48.593501537Z","level":"INFO","msg":"stream: started","id":"0xwz5pqd"}
+{"time":"2025-05-08T00:26:48.593563465Z","level":"INFO","msg":"writer: Do: started","stream_id":"0xwz5pqd"}
+{"time":"2025-05-08T00:26:48.593879605Z","level":"INFO","msg":"handler: started","stream_id":"0xwz5pqd"}
+{"time":"2025-05-08T00:26:48.594241247Z","level":"INFO","msg":"sender: started","stream_id":"0xwz5pqd"}
+{"time":"2025-05-08T00:26:48.673433806Z","level":"INFO","msg":"Starting system monitor"}
