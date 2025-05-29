@@ -42,3 +42,34 @@ deepspeed finetune_deepseekcoder.py \
     --deepspeed configs/ds_config_zero3.json \
     --bf16 True
 ```
+
+## Additionaly Notes for setting conda environment:
+
+```bash
+# 1. Create a new conda environment with Python 3.10
+conda create -n finetuneenv python=3.11 -y
+ 
+# 2. Activate the environment
+conda activate finetuneenv
+ 
+# 3. Upgrade pip to avoid version conflicts
+pip install --upgrade pip
+ 
+# 4. Install required packages. MAKE SURE requirements.txt is updated
+pip install -r -U requirements.txt
+```
+
+### Update requirement.txt:
+```
+torch>=2.1
+tokenizers
+transformers>=4.37
+accelerate>=1.7.0
+attrdict
+tqdm
+deepspeed
+datasets
+tensorboardX
+huggingface-hub
+peft
+```
