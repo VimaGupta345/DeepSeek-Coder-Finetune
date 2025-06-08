@@ -37,11 +37,11 @@ class DataArguments:
         default=None, metadata={"help": "Validation JSONL file path."}
     )
     hf_dataset_name: str = field(
-        default="ammarnasr/the-stack-rust-clean",
+        default="Maverfrick/Rust_dataset",
         metadata={"help": "HuggingFace dataset name."},
     )
     hf_dataset_split: str = field(
-        default="train[:100000]",
+        default="train",
         metadata={"help": "Split spec for HF dataset."},
     )
     preprocess_only: bool = field(
@@ -110,12 +110,13 @@ def process_hf_dataset(data_args: DataArguments):
     count = 0
     with open(data_args.data_path, "w") as f:
         for ex in ds:
-            content = ex.get("content", "").strip()
-            if not content:
+            instruction = ex.get("instruction", "").strip()
+            response = ex.get("response", "").strip()
+            if not instruction or not response:
                 continue
             entry = {
-                "instruction": "Explain and rewrite the following Rust code:",
-                "output": content,
+                "instruction": instruction,
+                "response": response,
             }
             f.write(json.dumps(entry) + "\n")
             count += 1
@@ -123,7 +124,7 @@ def process_hf_dataset(data_args: DataArguments):
 
 def train_tokenize_function(examples, tokenizer):
     sources = [build_instruction_prompt(ins) for ins in examples["instruction"]]
-    targets = [f"{out}\n{EOT_TOKEN}" for out in examples["output"]]
+    targets = [f"{out}\n{EOT_TOKEN}" for out in examples["response"]]
     tokenized = [
         tokenizer(s + t, truncation=True, max_length=tokenizer.model_max_length)
         for s, t in zip(sources, targets)
@@ -198,18 +199,26 @@ def train():
     lora_cfg = LoraConfig(
         r=16,
         lora_alpha=32,
-        target_modules=["q_proj", "v_proj"],
-        lora_dropout=0.05,
+        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+        lora_dropout=0.1,
         bias="none",
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_cfg)
 
-    # Load & split
+    # Load & split (from local JSONL)
     ds = load_dataset("json", data_files=data_args.data_path, split="train")
-    ds = ds.train_test_split(test_size=0.1, seed=42)
-    train_ds, eval_ds = ds["train"], ds["test"]
-    print(f"Train examples: {len(train_ds)}   Val examples: {len(eval_ds)}")
+    
+    # 80-10-10 split for train, eval, and test
+    train_val_test_split = ds.train_test_split(test_size=0.1, seed=42)
+    train_val_ds = train_val_test_split["train"]
+    test_ds = train_val_test_split["test"]
+
+    train_eval_split = train_val_ds.train_test_split(test_size=0.11, seed=42)  # 0.11 * 0.9 == 0.1
+    train_ds = train_eval_split['train']
+    eval_ds = train_eval_split['test']
+
+    print(f"Train examples: {len(train_ds)}   Val examples: {len(eval_ds)}   Test examples: {len(test_ds)}")
 
     # Tokenize
     train_ds = train_ds.map(
@@ -222,6 +231,12 @@ def train():
         train_tokenize_function,
         batched=True,
         remove_columns=eval_ds.column_names,
+        fn_kwargs={"tokenizer": tokenizer},
+    )
+    test_ds = test_ds.map(
+        train_tokenize_function,
+        batched=True,
+        remove_columns=test_ds.column_names,
         fn_kwargs={"tokenizer": tokenizer},
     )
 
@@ -240,8 +255,19 @@ def train():
         callbacks=callbacks,
     )
 
+    # Evaluate on test set before training
+    print("--- Evaluating base model on test set ---")
+    pre_train_metrics = trainer.evaluate(eval_dataset=test_ds, metric_key_prefix="pre_train_test")
+    print(pre_train_metrics)
+
     # Train & save
     trainer.train()
+
+    # Evaluate on test set after training
+    print("\n--- Evaluating fine-tuned model on test set ---")
+    post_train_metrics = trainer.evaluate(eval_dataset=test_ds, metric_key_prefix="post_train_test")
+    print(post_train_metrics)
+
     trainer.save_state()
     safe_save_model_for_hf_trainer(trainer, training_args.output_dir)
     model.save_pretrained(training_args.output_dir)
