@@ -1,1 +1,10 @@
 data/rust_instruct_format.jsonl
+wandb/
+
+trainer_output/
+lora_ckpt/
+lora-ocaml-out/
+output/
+output-ocaml-2e05-16/
+
+Report-*.out

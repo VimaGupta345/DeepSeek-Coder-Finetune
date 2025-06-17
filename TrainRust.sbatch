@@ -7,7 +7,7 @@
 #SBATCH -qinferno                               # QOS Name
 #SBATCH -oReport-%j.out                         # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL              # Mail preferences
-#SBATCH --mail-user=vgupta345@gatech.edu        # E-mail address for notifications
+#SBATCH --mail-user=xliang304@gatech.edu        # E-mail address for notifications
 cd $SLURM_SUBMIT_DIR                            # Change to working directory
 
 conda activate ian6-myenv
