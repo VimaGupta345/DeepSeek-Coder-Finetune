@@ -9,12 +9,9 @@ from typing import Optional, Sequence, Dict, List
 import torch
 import torch.distributed
 import transformers
-from transformers import Trainer as HfTrainer
+from transformers import Trainer
 from transformers.integrations import WandbCallback
 from datasets import load_dataset
-
-# PEFT imports for LoRA
-from peft import LoraConfig, get_peft_model
 
 IGNORE_INDEX = -100
 EOT_TOKEN = "<|EOT|>"
@@ -63,7 +60,7 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={"help": "Maximum sequence length. Sequences will be right padded/truncated."},
     )
     report_to: List[str] = field(default_factory=lambda: ["wandb"])
-    run_name: Optional[str] = field(default="deepseek-lora-r16-longrun")
+    run_name: Optional[str] = field(default="deepseek-full-finetune")
     logging_dir: Optional[str] = field(default="./wandb_logs")
     logging_steps: int = field(
         default=50, metadata={"help": "Log every X steps to W&B"}
@@ -73,36 +70,45 @@ class TrainingArguments(transformers.TrainingArguments):
     save_strategy: str = field(default="steps")
     save_steps: int = field(default=200)
     save_total_limit: int = field(default=3)
-    max_steps: int = field(default=1500, metadata={"help": "Max training steps (~4h run)"})
+    max_steps: int = field(default=1500, metadata={"help": "Max training steps"})
     num_train_epochs: int = field(default=3)
     load_best_model_at_end: bool = field(
         default=False,
         metadata={"help": "Load best model at end (requires matching strategies)"},
     )
-
-class Trainer(HfTrainer):
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        raw_model = getattr(model, "module", model)
-        outputs = raw_model(**inputs)
-        loss = outputs.loss if hasattr(outputs, "loss") else outputs[0]
-        return (loss, outputs) if return_outputs else loss
+    per_device_train_batch_size: int = field(default=4)
+    per_device_eval_batch_size: int = field(default=4)
+    gradient_accumulation_steps: int = field(default=4)
+    learning_rate: float = field(default=2e-5)
+    warmup_steps: int = field(default=100)
+    lr_scheduler_type: str = field(default="cosine")
+    gradient_checkpointing: bool = field(default=True)
+    bf16: bool = field(default=True)
 
 def compute_metrics(eval_pred):
-    preds, labels = eval_pred
-    # shift for causal lm
-    shift_logits = preds[..., :-1, :].contiguous()
+    """Compute metrics for evaluation."""
+    predictions, labels = eval_pred
+    # For causal LM, shift predictions and labels
+    shift_predictions = predictions[..., :-1, :].contiguous()
     shift_labels = labels[..., 1:].contiguous()
+
+    # Flatten the tokens
+    shift_predictions = shift_predictions.view(-1, shift_predictions.size(-1))
+    shift_labels = shift_labels.view(-1)
+
+    # Calculate loss
     loss_fct = torch.nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
-    loss = loss_fct(
-        shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)
-    )
+    loss = loss_fct(shift_predictions, shift_labels)
+
     try:
         perplexity = torch.exp(loss)
     except OverflowError:
         perplexity = float("inf")
+
     return {"eval_loss": loss.item(), "perplexity": perplexity.item()}
 
 def process_hf_dataset(data_args: DataArguments):
+    """Download and process HuggingFace dataset into instruction format."""
     os.makedirs(os.path.dirname(data_args.data_path), exist_ok=True)
     print(f"Downloading {data_args.hf_dataset_name} split {data_args.hf_dataset_split}...")
     ds = load_dataset(data_args.hf_dataset_name, split=data_args.hf_dataset_split)
@@ -121,64 +127,98 @@ def process_hf_dataset(data_args: DataArguments):
             count += 1
     print(f"✅ Saved {count} examples")
 
-def train_tokenize_function(examples, tokenizer):
-    sources = [build_instruction_prompt(ins) for ins in examples["instruction"]]
-    targets = [f"{out}\n{EOT_TOKEN}" for out in examples["output"]]
-    tokenized = [
-        tokenizer(s + t, truncation=True, max_length=tokenizer.model_max_length)
-        for s, t in zip(sources, targets)
+def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
+    """Collects the state dict and dump to disk."""
+    state_dict = trainer.model.state_dict()
+    if trainer.args.should_save:
+        cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
+        del state_dict
+        trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+
+def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
+    """Tokenize a list of strings."""
+    tokenized_list = [
+        tokenizer(
+            text,
+            return_tensors="pt",
+            padding="longest",
+            max_length=tokenizer.model_max_length,
+            truncation=True,
+        )
+        for text in strings
     ]
-    input_ids = [torch.tensor(x["input_ids"]) for x in tokenized]
-    labels = [x.clone() for x in input_ids]
-    for lbl, x in zip(labels, tokenized):
-        if tokenizer.eos_token_id in x["input_ids"]:
-            src_len = x["input_ids"].index(tokenizer.eos_token_id) + 1
-        else:
-            src_len = 0
-        lbl[:src_len] = IGNORE_INDEX
-    return {"input_ids": input_ids, "labels": labels}
+
+    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
+    input_ids_lens = labels_lens = [
+        tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item() for tokenized in tokenized_list
+    ]
+
+    return dict(
+        input_ids=input_ids,
+        labels=labels,
+        input_ids_lens=input_ids_lens,
+        labels_lens=labels_lens,
+    )
+
+def preprocess(
+    sources: Sequence[str],
+    targets: Sequence[str],
+    tokenizer: transformers.PreTrainedTokenizer,
+) -> Dict:
+    """Preprocess the data by tokenizing."""
+    examples = [s + t for s, t in zip(sources, targets)]
+    examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
+    input_ids = examples_tokenized["input_ids"]
+
+    labels = copy.deepcopy(input_ids)
+    for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
+        label[:source_len] = IGNORE_INDEX
+    return dict(input_ids=input_ids, labels=labels)
 
 @dataclass
-class DataCollatorForSupervisedDataset:
+class DataCollatorForSupervisedDataset(object):
+    """Collate examples for supervised fine-tuning."""
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        # turn each list into a Tensor
-        input_ids = [torch.tensor(x['input_ids'], dtype=torch.long) for x in instances]
-        labels    = [torch.tensor(x['labels'],    dtype=torch.long) for x in instances]
-
-        # now padding works
+        input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
+        input_ids = [torch.tensor(x) for x in input_ids]
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
         )
-        labels    = torch.nn.utils.rnn.pad_sequence(
-            labels,    batch_first=True, padding_value=IGNORE_INDEX
+        labels = [torch.tensor(x) for x in labels]
+        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
+
+        return dict(
+            input_ids=input_ids,
+            labels=labels,
+            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
-        return {
-            'input_ids':      input_ids,
-            'labels':         labels,
-            'attention_mask': input_ids.ne(self.tokenizer.pad_token_id),
-        }
 
-
-def safe_save_model_for_hf_trainer(trainer: HfTrainer, output_dir: str):
-    """Collects model state dict to CPU and saves to disk."""
-    state_dict = trainer.model.state_dict()
-    if trainer.args.should_save:
-        cpu_state = {k: v.cpu() for k, v in state_dict.items()}
-        del state_dict
-        trainer._save(output_dir, state_dict=cpu_state)
+def train_tokenize_function(examples, tokenizer):
+    """Tokenize function for training data using original logic."""
+    sources = [
+        build_instruction_prompt(instruction)
+        for instruction in examples['instruction']
+    ]
+    targets = [f"{output}\n{EOT_TOKEN}" for output in examples['output']]
+    data_dict = preprocess(sources, targets, tokenizer)
+    return data_dict
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    # Preprocess iff asked
+    if training_args.local_rank == 0:
+        print('='*100)
+        print(training_args)
+
+    # Preprocess dataset if requested
     if data_args.preprocess_only:
         process_hf_dataset(data_args)
         return
 
-    # Tokenizer + base model
+    # Load tokenizer
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         model_max_length=training_args.model_max_length,
@@ -186,65 +226,102 @@ def train():
         use_fast=True,
         trust_remote_code=True,
     )
+
+    if training_args.local_rank == 0:
+        print("PAD Token:", tokenizer.pad_token, tokenizer.pad_token_id)
+        print("BOS Token", tokenizer.bos_token, tokenizer.bos_token_id)
+        print("EOS Token", tokenizer.eos_token, tokenizer.eos_token_id)
+        print("Load tokenizer from {} over.".format(model_args.model_name_or_path))
+
+    # Load model
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
     )
+
+    # Configure model for training
     model.config.use_cache = False
-    model.gradient_checkpointing_disable()
+    if training_args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
 
-    #Full Fine-tuning: Do not Apply LoRA
-    #lora_cfg = LoraConfig(
-    #    r=16,
-    #    lora_alpha=32,
-    #    target_modules=["q_proj", "v_proj"],
-    #    lora_dropout=0.05,
-    #    bias="none",
-    #    task_type="CAUSAL_LM",
-    #)
-    #model = get_peft_model(model, lora_cfg)
+    if training_args.local_rank == 0:
+        print("Load model from {} over.".format(model_args.model_name_or_path))
 
-    # Load & split
-    ds = load_dataset("json", data_files=data_args.data_path, split="train")
-    ds = ds.train_test_split(test_size=0.1, seed=42)
-    train_ds, eval_ds = ds["train"], ds["test"]
-    print(f"Train examples: {len(train_ds)}   Val examples: {len(eval_ds)}")
-
-    # Tokenize
-    train_ds = train_ds.map(
-        train_tokenize_function,
-        batched=True,
-        remove_columns=train_ds.column_names,
-        fn_kwargs={"tokenizer": tokenizer},
-    )
-    eval_ds = eval_ds.map(
-        train_tokenize_function,
-        batched=True,
-        remove_columns=eval_ds.column_names,
-        fn_kwargs={"tokenizer": tokenizer},
+    # Load and split dataset
+    raw_train_datasets = load_dataset(
+        'json',
+        data_files=data_args.data_path,
+        split="train",
+        cache_dir=training_args.cache_dir
     )
 
-    # Collator & Trainer
-    data_collator = DataCollatorForSupervisedDataset(tokenizer)
-    callbacks = [WandbCallback] if "wandb" in training_args.report_to else []
+    # Split dataset into train and eval
+    if training_args.local_rank > 0:
+        torch.distributed.barrier()
 
+    # Create train/eval split
+    split_dataset = raw_train_datasets.train_test_split(test_size=0.1, seed=42)
+    train_dataset = split_dataset["train"]
+    eval_dataset = split_dataset["test"]
+
+    # Tokenize datasets
+    train_dataset = train_dataset.map(
+        train_tokenize_function,
+        batched=True,
+        batch_size=3000,
+        num_proc=32,
+        remove_columns=train_dataset.column_names,
+        load_from_cache_file=True,
+        desc="Running Encoding on Train Set",
+        fn_kwargs={"tokenizer": tokenizer}
+    )
+
+    eval_dataset = eval_dataset.map(
+        train_tokenize_function,
+        batched=True,
+        batch_size=3000,
+        num_proc=32,
+        remove_columns=eval_dataset.column_names,
+        load_from_cache_file=True,
+        desc="Running Encoding on Eval Set",
+        fn_kwargs={"tokenizer": tokenizer}
+    )
+
+    if training_args.local_rank == 0:
+        torch.distributed.barrier()
+
+    if training_args.local_rank == 0:
+        print(f"Training dataset samples: {len(train_dataset)}")
+        print(f"Evaluation dataset samples: {len(eval_dataset)}")
+        for index in random.sample(range(len(train_dataset)), 3):
+            print(f"Sample {index} of the training set: {train_dataset[index]['input_ids']}, {train_dataset[index]['labels']}.")
+            print(f"Sample {index} of the training set: {tokenizer.decode(list(train_dataset[index]['input_ids']))}.")
+
+    # Data collator
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+
+    # Setup callbacks
+    callbacks = []
+    if "wandb" in training_args.report_to:
+        callbacks.append(WandbCallback)
+
+    # Create trainer
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_ds,
-        eval_dataset=eval_ds,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         data_collator=data_collator,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
         callbacks=callbacks,
     )
 
-    # Train & save
+    # Train
     trainer.train()
     trainer.save_state()
-    safe_save_model_for_hf_trainer(trainer, training_args.output_dir)
-    model.save_pretrained(training_args.output_dir)
+    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
 
 if __name__ == "__main__":
     train()
