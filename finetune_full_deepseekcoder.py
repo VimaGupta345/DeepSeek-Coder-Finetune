@@ -27,14 +27,14 @@ You are an AI programming assistant, utilizing the DeepSeek Coder model, develop
 @dataclass
 class DataArguments:
     data_path: str = field(
-        default="data/rust_instruct_format.jsonl",
+        default="data/rust_instruct_format2.jsonl",
         metadata={"help": "Output path for processed JSONL."},
     )
     eval_data_path: Optional[str] = field(
         default=None, metadata={"help": "Validation JSONL file path."}
     )
     hf_dataset_name: str = field(
-        default="ammarnasr/the-stack-rust-clean",
+        default="Maverfrick/Rust_dataset",
         metadata={"help": "HuggingFace dataset name."},
     )
     hf_dataset_split: str = field(
@@ -116,11 +116,12 @@ def process_hf_dataset(data_args: DataArguments):
     count = 0
     with open(data_args.data_path, "w") as f:
         for ex in ds:
-            content = ex.get("content", "").strip()
-            if not content:
+            instruction = ex.get("instruction", "").strip()
+            content = ex.get("response", "").strip()
+            if not instruction or not content:
                 continue
             entry = {
-                "instruction": "Explain and rewrite the following Rust code:",
+                "instruction": instruction,
                 "output": content,
             }
             f.write(json.dumps(entry) + "\n")
