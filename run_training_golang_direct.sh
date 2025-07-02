@@ -6,21 +6,20 @@
 set -e
 
 # Configuration
-SCRIPT_NAME="finetune_full_deepseekcoder_includes_eval_rustcontinue.py"
-DATA_PATH="data/rust_instruct_format2.jsonl"
-# $(date +%Y%m%d_%H%M%S)
-OUTPUT_PATH="../../../scratch/shared_dir/finetuned_models/output/full_training_rust_20250626_130748"
+SCRIPT_NAME="finetune_full_deepseekcoder_golang_includes_eval.py"
+DATA_PATH="data/golang_train.jsonl"
+OUTPUT_PATH="../../../scratch/shared_dir/finetuned_models/output/full_training_golang_instruct_$(date +%Y%m%d_%H%M%S)"
 MODEL_PATH="deepseek-ai/deepseek-coder-6.7b-instruct"
-NUM_GPUS=3
+NUM_GPUS=4
 
-echo "🚀 Starting H200 6-GPU training directly..."
+echo "🚀 Starting H200 4-GPU training directly..."
 echo "📊 Model: $MODEL_PATH"
 echo "📁 Data: $DATA_PATH"  
 echo "💾 Output: $OUTPUT_PATH"
 echo "🔧 GPUs: $NUM_GPUS"
 
 # Set environment variables
-export CUDA_VISIBLE_DEVICES=4,5,6
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 export NCCL_DEBUG=INFO
 export PYTHONPATH=$PWD:$PYTHONPATH
 
@@ -40,7 +39,7 @@ torchrun \
     --output_dir $OUTPUT_PATH \
     --num_train_epochs 3 \
     --model_max_length 1024 \
-    --per_device_train_batch_size 32 \
+    --per_device_train_batch_size 64 \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 3 \
     --evaluation_strategy "steps" \
@@ -56,9 +55,8 @@ torchrun \
     --bf16 True \
     --max_steps 1500 \
     --report_to "wandb" \
-    --run_name "h200-deepseek-full-20250626_130748" \
+    --run_name "h200-deepseek-golang-instruct-$(date +%Y%m%d_%H%M%S)" \
     --logging_dir "$OUTPUT_PATH/logs" \
-    --resume_from_checkpoint "$OUTPUT_PATH/checkpoint-1000" \
     2>&1 | tee $OUTPUT_PATH/training.log
 
 echo "✅ Training completed at $(date)"

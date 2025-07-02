@@ -58,7 +58,6 @@ torchrun \
     --report_to "wandb" \
     --run_name "h200-deepseek-full-20250626_130748" \
     --logging_dir "$OUTPUT_PATH/logs" \
-    --resume_from_checkpoint "$OUTPUT_PATH/checkpoint-1000" \
     2>&1 | tee $OUTPUT_PATH/training.log
 
 echo "✅ Training completed at $(date)"
