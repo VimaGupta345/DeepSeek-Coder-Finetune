@@ -38,11 +38,11 @@ class DataArguments:
         metadata={"help": "HuggingFace dataset name."},
     )
     hf_train_split: str = field(
-        default="train[:250000]",
+        default="train[:100000]",
         metadata={"help": "Training split spec for HF dataset."},
     )
     hf_eval_split: str = field(
-        default="train[250000:275000]",
+        default="train[100000:110000]",
         metadata={"help": "Evaluation split spec for HF dataset."},
     )
     preprocess_only: bool = field(
@@ -52,7 +52,7 @@ class DataArguments:
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(
-        default="deepseek-ai/deepseek-coder-6.7b-base"
+        default="deepseek-ai/deepseek-coder-6.7b-instruct"
     )
 
 @dataclass
@@ -70,7 +70,6 @@ class TrainingArguments(transformers.TrainingArguments):
         default=50, metadata={"help": "Log every X steps to W&B"}
     )
     evaluation_strategy: str = field(default="steps")
-    do_eval: bool = field(default=True)
     eval_steps: int = field(default=200)
     save_strategy: str = field(default="steps")
     save_steps: int = field(default=200)
@@ -232,7 +231,7 @@ def train_tokenize_function(examples, tokenizer):
         build_instruction_prompt(instruction)
         for instruction in examples['instruction']
     ]
-    targets = [f"{output}\n{EOT_TOKEN}" for output in examples['response']]
+    targets = [f"{output}\n{EOT_TOKEN}" for output in examples['output']]
     data_dict = preprocess(sources, targets, tokenizer)
     return data_dict
 

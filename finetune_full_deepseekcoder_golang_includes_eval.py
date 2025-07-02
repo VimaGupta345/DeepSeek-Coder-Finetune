@@ -3,38 +3,33 @@ import os
 import json
 import copy
 import random
+import logging
 from dataclasses import dataclass, field
-from typing import Optional, Sequence, Dict, List
+from typing import Optional, Dict, Sequence, List
 
 import torch
 import torch.distributed
 import transformers
-from transformers import Trainer
-from transformers.integrations import WandbCallback
+from transformers import Trainer, TrainingArguments
 from datasets import load_dataset
 
-IGNORE_INDEX = -100
-EOT_TOKEN = "<|EOT|>"
-
-def build_instruction_prompt(instruction: str):
-    return '''
-You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer.
-### Instruction:
-{}
-### Response:
-'''.format(instruction.strip()).lstrip()
+@dataclass
+class ModelArguments:
+    model_name_or_path: Optional[str] = field(
+        default="deepseek-ai/deepseek-coder-6.7b-instruct"
+    )
 
 @dataclass
 class DataArguments:
     data_path: str = field(
-        default="data/rust_instruct_format2.jsonl",
+        default="data/golang_instruct_format.jsonl",
         metadata={"help": "Output path for processed JSONL."},
     )
     eval_data_path: Optional[str] = field(
         default=None, metadata={"help": "Validation JSONL file path."}
     )
     hf_dataset_name: str = field(
-        default="Maverfrick/Rust_dataset",
+        default="smcleod/golang-coder",
         metadata={"help": "HuggingFace dataset name."},
     )
     hf_train_split: str = field(
@@ -48,11 +43,13 @@ class DataArguments:
     preprocess_only: bool = field(
         default=False, metadata={"help": "If true, only preprocess and exit."}
     )
-
-@dataclass
-class ModelArguments:
-    model_name_or_path: Optional[str] = field(
-        default="deepseek-ai/deepseek-coder-6.7b-base"
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={"help": "For debugging purposes or quicker training, truncate the number of training examples to this value if set."},
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={"help": "For debugging purposes or quicker training, truncate the number of evaluation examples to this value if set."},
     )
 
 @dataclass
@@ -81,9 +78,9 @@ class TrainingArguments(transformers.TrainingArguments):
         default=False,
         metadata={"help": "Load best model at end (requires matching strategies)"},
     )
-    per_device_train_batch_size: int = field(default=4)
+    per_device_train_batch_size: int = field(default=64)
     per_device_eval_batch_size: int = field(default=4)
-    gradient_accumulation_steps: int = field(default=4)
+    gradient_accumulation_steps: int = field(default=3)
     learning_rate: float = field(default=2e-5)
     warmup_steps: int = field(default=100)
     lr_scheduler_type: str = field(default="cosine")
@@ -100,11 +97,11 @@ def compute_metrics(eval_pred):
     # Flatten the tokens
     shift_predictions = shift_predictions.view(-1, shift_predictions.size(-1))
     shift_labels = shift_labels.view(-1)
-
-    # Calculate loss
-    loss_fct = torch.nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
+    
+    # Compute loss (cross entropy)
+    loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100, reduction='mean')
     loss = loss_fct(shift_predictions, shift_labels)
-
+    
     try:
         perplexity = torch.exp(loss)
     except OverflowError:
@@ -128,13 +125,23 @@ def process_hf_dataset(data_args: DataArguments):
     train_count = 0
     with open(data_args.data_path, "w") as f:
         for ex in train_ds:
-            instruction = ex.get("instruction", "").strip()
-            content = ex.get("response", "").strip()
-            if not instruction or not content:
+            # Extract user and assistant messages from the conversation
+            messages = ex.get("messages", [])
+            user_content = ""
+            assistant_content = ""
+            
+            for msg in messages:
+                if msg.get("role") == "user":
+                    user_content = msg.get("content", "").strip()
+                elif msg.get("role") == "assistant":
+                    assistant_content = msg.get("content", "").strip()
+            
+            if not user_content or not assistant_content:
                 continue
+                
             entry = {
-                "instruction": instruction,
-                "output": content,
+                "instruction": user_content,
+                "output": assistant_content,
             }
             f.write(json.dumps(entry) + "\n")
             train_count += 1
@@ -145,13 +152,23 @@ def process_hf_dataset(data_args: DataArguments):
     eval_count = 0
     with open(eval_data_path, "w") as f:
         for ex in eval_ds:
-            instruction = ex.get("instruction", "").strip()
-            content = ex.get("response", "").strip()
-            if not instruction or not content:
+            # Extract user and assistant messages from the conversation
+            messages = ex.get("messages", [])
+            user_content = ""
+            assistant_content = ""
+            
+            for msg in messages:
+                if msg.get("role") == "user":
+                    user_content = msg.get("content", "").strip()
+                elif msg.get("role") == "assistant":
+                    assistant_content = msg.get("content", "").strip()
+            
+            if not user_content or not assistant_content:
                 continue
+                
             entry = {
-                "instruction": instruction,
-                "output": content,
+                "instruction": user_content,
+                "output": assistant_content,
             }
             f.write(json.dumps(entry) + "\n")
             eval_count += 1
@@ -166,68 +183,30 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
 
-def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
-    """Tokenize a list of strings."""
-    tokenized_list = [
-        tokenizer(
-            text,
-            return_tensors="pt",
-            padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
-        )
-        for text in strings
-    ]
+def build_instruction_prompt(instruction: str) -> str:
+    return f"""You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer.
+### Instruction:
+{instruction}
+### Response:
+"""
 
-    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
-    input_ids_lens = labels_lens = [
-        tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item() for tokenized in tokenized_list
-    ]
-
-    return dict(
-        input_ids=input_ids,
-        labels=labels,
-        input_ids_lens=input_ids_lens,
-        labels_lens=labels_lens,
-    )
-
-def preprocess(
-    sources: Sequence[str],
-    targets: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-) -> Dict:
+def preprocess(sources: Sequence[str], targets: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
     """Preprocess the data by tokenizing."""
     examples = [s + t for s, t in zip(sources, targets)]
-    examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
-    input_ids = examples_tokenized["input_ids"]
-
-    labels = copy.deepcopy(input_ids)
-    for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
-        label[:source_len] = IGNORE_INDEX
-    return dict(input_ids=input_ids, labels=labels)
-
-@dataclass
-class DataCollatorForSupervisedDataset(object):
-    """Collate examples for supervised fine-tuning."""
-    tokenizer: transformers.PreTrainedTokenizer
-
-    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
-        input_ids = [torch.tensor(x) for x in input_ids]
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
-        )
-        labels = [torch.tensor(x) for x in labels]
-        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
-
-        return dict(
-            input_ids=input_ids,
-            labels=labels,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-        )
+    examples_tokenized = tokenizer(examples, max_length=1024, truncation=True, padding=False)
+    sources_tokenized = tokenizer(sources, max_length=1024, truncation=True, padding=False)
+    
+    input_ids_labels = []
+    for tokenized_full, tokenized_s in zip(examples_tokenized["input_ids"], sources_tokenized["input_ids"]):
+        input_ids_label = copy.deepcopy(tokenized_full)
+        for i in range(len(tokenized_s)):
+            input_ids_label[i] = -100
+        input_ids_labels.append(input_ids_label)
+    
+    return dict(input_ids=examples_tokenized["input_ids"], labels=input_ids_labels)
 
 def train_tokenize_function(examples, tokenizer):
-    """Tokenize function for training data using original logic."""
+    EOT_TOKEN = "<|EOT|>"
     sources = [
         build_instruction_prompt(instruction)
         for instruction in examples['instruction']
@@ -260,47 +239,84 @@ def load_datasets_from_hf(data_args: DataArguments, training_args: TrainingArgum
     if training_args.local_rank == 0:
         torch.distributed.barrier()
     
+    # Convert messages format to instruction/response format
+    def convert_messages_to_instruction_response(examples):
+        instructions = []
+        responses = []
+        
+        for messages in examples['messages']:
+            user_content = ""
+            assistant_content = ""
+            
+            for msg in messages:
+                if msg.get("role") == "user":
+                    user_content = msg.get("content", "").strip()
+                elif msg.get("role") == "assistant":
+                    assistant_content = msg.get("content", "").strip()
+            
+            instructions.append(user_content)
+            responses.append(assistant_content)
+        
+        return {
+            'instruction': instructions,
+            'response': responses
+        }
+    
+    # Convert both datasets
+    train_raw_dataset = train_raw_dataset.map(
+        convert_messages_to_instruction_response,
+        batched=True,
+        remove_columns=train_raw_dataset.column_names,
+        desc="Converting training messages to instruction/response format"
+    )
+    
+    eval_raw_dataset = eval_raw_dataset.map(
+        convert_messages_to_instruction_response,
+        batched=True,
+        remove_columns=eval_raw_dataset.column_names,
+        desc="Converting eval messages to instruction/response format"
+    )
+    
     return train_raw_dataset, eval_raw_dataset
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    if training_args.local_rank == 0:
-        print('='*100)
-        print(training_args)
-
-    # Preprocess dataset if requested
+    # Preprocess only mode
     if data_args.preprocess_only:
+        print("🔄 Preprocessing dataset only...")
         process_hf_dataset(data_args)
+        print("✅ Preprocessing completed. Exiting.")
         return
+
+    # Set up logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+    )
+
+    # Print training arguments for debugging
+    print("=" * 100)
+    print(training_args)
+    print("=" * 100)
 
     # Load tokenizer
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        model_max_length=training_args.model_max_length,
-        padding_side="right",
-        use_fast=True,
-        trust_remote_code=True,
+        model_args.model_name_or_path, trust_remote_code=True, use_fast=False
     )
-
-    if training_args.local_rank == 0:
-        print("PAD Token:", tokenizer.pad_token, tokenizer.pad_token_id)
-        print("BOS Token", tokenizer.bos_token, tokenizer.bos_token_id)
-        print("EOS Token", tokenizer.eos_token, tokenizer.eos_token_id)
-        print("Load tokenizer from {} over.".format(model_args.model_name_or_path))
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    print(f"PAD Token: {tokenizer.pad_token} {tokenizer.pad_token_id}")
+    print(f"BOS Token {tokenizer.bos_token} {tokenizer.bos_token_id}")
+    print(f"EOS Token {tokenizer.eos_token} {tokenizer.eos_token_id}")
+    print("Load tokenizer from {} over.".format(model_args.model_name_or_path))
 
     # Load model
     model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
+        model_args.model_name_or_path, trust_remote_code=True, torch_dtype=torch.bfloat16
     )
-
-    # Configure model for training
-    model.config.use_cache = False
-    if training_args.gradient_checkpointing:
-        model.gradient_checkpointing_enable()
 
     if training_args.local_rank == 0:
         print("Load model from {} over.".format(model_args.model_name_or_path))
@@ -339,12 +355,13 @@ def train():
             print(f"Sample {index} of the training set: {tokenizer.decode(list(train_dataset[index]['input_ids']))}.")
 
     # Data collator
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    from transformers import DataCollatorForSeq2Seq
+    data_collator = DataCollatorForSeq2Seq(
+        tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True
+    )
 
-    # Setup callbacks
+    # Initialize callbacks
     callbacks = []
-    if "wandb" in training_args.report_to:
-        callbacks.append(WandbCallback)
 
     # Create trainer
     trainer = Trainer(
@@ -358,8 +375,12 @@ def train():
         callbacks=callbacks,
     )
 
-    # Train
-    trainer.train()
+    # Training
+    print("*** Train ***")
+    train_result = trainer.train()
+    metrics = train_result.metrics
+    trainer.log_metrics("train", metrics)
+    trainer.save_metrics("train", metrics)
     trainer.save_state()
     safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
 
