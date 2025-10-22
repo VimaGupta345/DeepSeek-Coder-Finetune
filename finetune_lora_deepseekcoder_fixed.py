@@ -19,7 +19,6 @@ from datasets import load_dataset
 from peft import LoraConfig, get_peft_model
 
 IGNORE_INDEX = -100
-EOT_TOKEN = "<|EOT|>"
 
 def build_instruction_prompt(instruction: str):
     return '''
